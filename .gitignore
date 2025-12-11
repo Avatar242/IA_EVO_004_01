@@ -1,0 +1,23 @@
+# Entornos virtuales de Python
+.venv/
+venv/
+env/
+ENV/
+
+# Archivos de variables de entorno (¡Contienen secretos!)
+.env
+
+# Caché y artefactos de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de configuración de IDEs
+.vscode/
+.idea/
+
+# Bases de datos y archivos de prueba locales
+*.db
+*.sqlite3
+test_output/

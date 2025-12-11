@@ -1,0 +1,8 @@
+# Dependencias del proyecto IA_EVO_004_01
+
+# Para cargar variables de entorno desde el archivo .env
+python-dotenv
+
+# Librerías para los clientes de API de IA
+google-generativeai
+ollama
