@@ -21,3 +21,7 @@ __pycache__/
 *.db
 *.sqlite3
 test_output/
+
+# Archivos de prueba temporales
+#test_connections.py
+#discover_models.py
