@@ -13,3 +13,7 @@ requests
 # Para la funcionalidad RAG
 pypdf
 chromadb
+
+# Langchain para capacidades avanzadas de procesamiento de texto (Chunking)
+langchain-core
+langchain-text-splitters

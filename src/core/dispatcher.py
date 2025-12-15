@@ -1,90 +1,64 @@
 # src/core/dispatcher.py
 
 import json
+import re
 from services.base_api_client import BaseApiClient
 from core.tool_registry import ToolRegistry
 
 class Dispatcher:
     """
-    El "cerebro" del agente. Decide qué herramienta usar para responder a una consulta.
-
-    El Dispatcher utiliza un LLM para analizar la consulta del usuario y las
-    especificaciones de las herramientas disponibles, y luego selecciona la herramienta
-    más adecuada. No ejecuta la herramienta, solo determina el plan de ejecución.
+    MODIFICADO: Decide qué herramienta usar. Su única responsabilidad es devolver
+    el nombre de la herramienta más adecuada.
     """
 
     def __init__(self, api_client: BaseApiClient):
-        """
-        Inicializa el Dispatcher con un cliente de API para comunicarse con el LLM.
-
-        Args:
-            api_client (BaseApiClient): El cliente de API (Ollama o Gemini) que se usará
-                                        para el razonamiento del LLM.
-        """
         self._api_client = api_client
-        print("Dispatcher inicializado.")
+        print("Dispatcher (simplificado) inicializado.")
 
     def _build_system_prompt(self, tool_registry: ToolRegistry) -> str:
         """
-        Construye el prompt del sistema que instruye al LLM sobre cómo elegir una herramienta.
+        Construye un prompt más simple que solo pide el nombre de la herramienta.
         """
         tool_specs = tool_registry.get_tool_specifications()
         tool_specs_json = json.dumps(tool_specs, indent=2)
 
         return f"""
-        Tu rol es ser un despachador inteligente. Tu objetivo es analizar la consulta del usuario
-        y seleccionar la herramienta más adecuada de la lista.
+Tu rol es ser un despachador inteligente. Tu objetivo es analizar la consulta del usuario
+y seleccionar la herramienta más adecuada de la siguiente lista para responderla.
 
-        Lista de herramientas disponibles:
-        {tool_specs_json}
+Lista de herramientas disponibles en formato JSON:
+{tool_specs_json}
 
-        Debes devolver ÚNICAMENTE un objeto JSON con dos claves:
-        1. "tool_name": El nombre de la herramienta seleccionada.
-        2. "tool_args": Un diccionario con los argumentos que la herramienta necesita, extraídos de la consulta del usuario.
+Basándote en la consulta, responde ÚNICAMENTE con el string del nombre de la herramienta
+seleccionada. Por ejemplo: "rag_tool" o "general_conversation".
 
-        Ejemplo 1: si el usuario dice "hola", la respuesta debe ser:
-        {{"tool_name": "general_conversation", "tool_args": {{"user_prompt": "hola"}}}}
+No añadas ninguna explicación, comentario o formato JSON. Tu respuesta debe ser solo
+el nombre de la herramienta.
+"""
 
-        Ejemplo 2: si el usuario pregunta "¿qué dice el documento sobre X?", la respuesta debe ser:
-        {{"tool_name": "rag_tool", "tool_args": {{"mode": "query", "user_query": "¿qué dice el documento sobre X?"}}}}
-
-        No añadas explicaciones. Tu respuesta debe ser solo el JSON.
+    def dispatch(self, user_prompt: str, history: list, tool_registry: ToolRegistry) -> str:
         """
-
-    def dispatch(self, user_prompt: str, history: list, tool_registry: ToolRegistry) -> (str, dict):
-        import re
+        MODIFICADO: Devuelve solo el nombre (str) de la herramienta seleccionada.
+        """
         system_prompt = self._build_system_prompt(tool_registry)
 
-        dispatch_history = [{'role': 'system', 'content': system_prompt}]
+        dispatch_history = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': f"Consulta del usuario: '{user_prompt}'"}
+        ]
         
-        # Para el dispatcher, solo pasamos el prompt actual, no el historial completo.
-        final_prompt = f"Consulta del usuario: '{user_prompt}'"
-
-        llm_response_str = self._api_client.generate_content(
-            prompt=final_prompt,
+        # El LLM solo debe devolver el nombre de la herramienta como un string simple
+        tool_name = self._api_client.generate_content(
+            prompt="Selecciona la herramienta apropiada.",
             history=dispatch_history
-        )
-
-        json_match = re.search(r"\{.*\}", llm_response_str, re.DOTALL)
-        clean_json_str = json_match.group(0) if json_match else llm_response_str
+        ).strip().replace("\"", "") # Limpiamos por si devuelve comillas
 
         try:
-            response_json = json.loads(clean_json_str)
-            tool_name = response_json.get("tool_name")
-            tool_args = response_json.get("tool_args", {}) # Obtenemos los argumentos
-
-            if tool_name and tool_registry.get_tool(tool_name):
-                print(f"Dispatcher ha seleccionado la herramienta: '{tool_name}' con args: {tool_args}")
-                return tool_name, tool_args # Devolvemos los argumentos
-            else:
-                print(f"[ADVERTENCIA] El LLM sugirió una herramienta inexistente: '{tool_name}'.")
-        
-        except (json.JSONDecodeError, AttributeError):
-            print(f"[ADVERTENCIA] La respuesta del LLM no fue un JSON válido: '{llm_response_str}'.")
-
-        # Plan B: si todo falla, usar conversación general.
-        return "general_conversation", {"user_prompt": user_prompt, "history": history}
-
-
-
-
+            # Verificamos si la herramienta seleccionada realmente existe
+            tool_registry.get_tool(tool_name)
+            print(f"Dispatcher ha seleccionado la herramienta: '{tool_name}'")
+            return tool_name
+        except KeyError:
+            # Si el LLM alucina un nombre de herramienta que no existe
+            print(f"[ADVERTENCIA] El LLM sugirió una herramienta inexistente: '{tool_name}'. Usando la herramienta por defecto.")
+            return "general_conversation"

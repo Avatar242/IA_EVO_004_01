@@ -3,12 +3,12 @@
 from typing import List
 import pypdf
 
+# NUEVO: Importamos el divisor de texto de Langchain
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 class DocumentProcessor:
     """
-    Una clase dedicada a procesar documentos para la funcionalidad RAG.
-
-    Actualmente, se enfoca en leer archivos PDF, extraer su texto y dividirlo
-    en trozos manejables (chunks) para su posterior procesamiento y embedding.
+    MODIFICADO: Procesa documentos usando estrategias avanzadas de división de texto (chunking).
     """
 
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
@@ -16,30 +16,22 @@ class DocumentProcessor:
         Inicializa el procesador de documentos.
 
         Args:
-            chunk_size (int): El tamaño deseado para cada trozo de texto (en caracteres).
-            chunk_overlap (int): El número de caracteres que se superpondrán entre
-                                 trozos consecutivos para mantener el contexto.
+            chunk_size (int): El tamaño máximo de cada trozo (el splitter intentará respetarlo).
+            chunk_overlap (int): El número de caracteres que se superpondrán entre trozos.
         """
-        if chunk_overlap >= chunk_size:
-            raise ValueError("chunk_overlap debe ser menor que chunk_size.")
-        
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        print("DocumentProcessor inicializado.")
+        # MODIFICADO: Creamos una instancia del splitter de Langchain.
+        # Intenta dividir primero por párrafos, luego por saltos de línea, etc.
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            length_function=len,
+            is_separator_regex=False,
+        )
+        print(f"DocumentProcessor inicializado con RecursiveCharacterTextSplitter (chunk_size={chunk_size}, chunk_overlap={chunk_overlap}).")
 
     def process_pdf(self, file_path: str) -> List[str]:
         """
-        Lee un archivo PDF, extrae el texto y lo divide en trozos.
-
-        Args:
-            file_path (str): La ruta al archivo PDF.
-
-        Returns:
-            List[str]: Una lista de trozos de texto extraídos del documento.
-        
-        Raises:
-            FileNotFoundError: Si el archivo no se encuentra en la ruta especificada.
-            Exception: Para otros errores relacionados con la lectura del PDF.
+        Lee un archivo PDF, extrae el texto y lo divide usando el text splitter.
         """
         print(f"Procesando el archivo PDF: {file_path}")
         try:
@@ -53,7 +45,10 @@ class DocumentProcessor:
             if not full_text:
                 return []
 
-            return self._chunk_text(full_text)
+            # MODIFICADO: Usamos el splitter para dividir el texto
+            chunks = self.text_splitter.split_text(full_text)
+            print(f"Texto dividido en {len(chunks)} trozos (chunks).")
+            return chunks
             
         except FileNotFoundError:
             print(f"[ERROR] Archivo no encontrado en: {file_path}")
@@ -62,18 +57,4 @@ class DocumentProcessor:
             print(f"[ERROR] No se pudo leer el archivo PDF: {e}")
             raise
 
-    def _chunk_text(self, text: str) -> List[str]:
-        """
-        Divide un texto largo en trozos más pequeños con superposición.
-        """
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = start + self.chunk_size
-            chunks.append(text[start:end])
-            
-            # El siguiente trozo comienza antes del final del actual para crear la superposición
-            start += self.chunk_size - self.chunk_overlap
-            
-        print(f"Texto dividido en {len(chunks)} trozos.")
-        return chunks
+    # El método _chunk_text manual ya no es necesario y ha sido eliminado.

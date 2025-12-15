@@ -40,3 +40,13 @@ Este proyecto tiene como objetivo construir un agente de IA avanzado que actúa 
 Para iniciar el agente, ejecuta el siguiente comando:
 ```bash
 python src/main.py
+
+
+---
+
+## Deuda Técnica y Mejoras Futuras
+
+Durante el desarrollo del Hito de RAG, se ha identificado una deuda técnica clave:
+
+*   **Calidad de la Búsqueda (Retrieval Quality):** La combinación actual de la estrategia de chunking (`RecursiveCharacterTextSplitter`) y el modelo de embeddings no es suficientemente precisa para recuperar de forma fiable información específica (como listas o datos concretos) de documentos densos.
+    *   **Solución Planificada:** Reemplazar el `RecursiveCharacterTextSplitter` con una implementación de **Chunking Semántico Puro (Nivel 3)**. Esto implicará el uso de modelos de NLP para dividir el texto basándose en cambios de tema, en lugar de separadores de caracteres. Esta tarea se abordará en un hito de optimización futuro.

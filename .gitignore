@@ -25,3 +25,6 @@ test_output/
 # Archivos de prueba temporales
 #test_connections.py
 #discover_models.py
+
+# Artefactos de la aplicación y bases de datos locales
+db/
