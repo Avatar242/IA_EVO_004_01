@@ -9,3 +9,7 @@ ollama
 
 #Para verificar modelos de ollama
 requests
+
+# Para la funcionalidad RAG
+pypdf
+chromadb
