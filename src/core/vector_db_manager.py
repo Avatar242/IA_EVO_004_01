@@ -61,24 +61,32 @@ class VectorDBManager:
             print(f"[ERROR] No se pudieron añadir los documentos a ChromaDB: {e}")
             return False
 
-    def query(self, query_embedding: List[float], n_results: int = 5) -> List[Dict[str, Any]]:
+    def query(self, query_embedding: List[float], n_results: int = 5, where_filter: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """
-        Realiza una búsqueda de similitud en la colección.
+        MODIFICADO: Realiza una búsqueda de similitud, con un filtro de metadata opcional.
 
         Args:
-            query_embedding (List[float]): El vector de embedding de la consulta del usuario.
-            n_results (int): El número de resultados más similares a devolver.
+            query_embedding (List[float]): El vector de embedding de la consulta.
+            n_results (int): El número de resultados a devolver.
+            where_filter (Dict[str, Any], optional): Un diccionario para filtrar la metadata.
+                                                     Ejemplo: {"category": "ciberseguridad"}
 
         Returns:
-            List[Dict[str, Any]]: Una lista de resultados, donde cada resultado contiene
-                                  el documento, la metadata y la distancia.
+            List[Dict[str, Any]]: Una lista de resultados.
         """
         try:
-            results = self.collection.query(
-                query_embeddings=[query_embedding],
-                n_results=n_results
-            )
-            # Extraemos los resultados del primer (y único) query
+            query_params = {
+                "query_embeddings": [query_embedding],
+                "n_results": n_results
+            }
+            if where_filter:
+                query_params["where"] = where_filter
+                print(f"Ejecutando consulta con filtro: {where_filter}")
+            else:
+                print("Ejecutando consulta sin filtro.")
+
+            results = self.collection.query(**query_params)
+            
             combined_results = []
             if results and results['ids'][0]:
                 for i in range(len(results['ids'][0])):
@@ -91,4 +99,7 @@ class VectorDBManager:
             return combined_results
         except Exception as e:
             print(f"[ERROR] Ocurrió un error al consultar ChromaDB: {e}")
-            return []
+            return [] 
+
+
+

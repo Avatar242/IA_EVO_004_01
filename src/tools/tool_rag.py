@@ -30,17 +30,18 @@ class RAGTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Responde preguntas usando una base de conocimiento de documentos previamente indexados. "
-            "Úsala cuando el usuario pregunte sobre contenido específico de un archivo. "
-            "La entrada para esta herramienta debe ser un JSON con las claves 'mode' ('query') y 'user_query' (la pregunta del usuario)."
+            "Indispensable para responder preguntas sobre el contenido específico de documentos, informes o archivos que han sido previamente indexados. "
+            "Úsala siempre que la pregunta del usuario haga referencia a un documento, un informe, un archivo, o un tema muy específico que probablemente no sea de conocimiento general."
         )
 
     def execute(self, mode: str, **kwargs: Any) -> str:
         if mode == "index":
-            # La llamada ahora es más simple, solo necesita el file_path
             return self.index_document(file_path=kwargs.get("file_path"))
         elif mode == "query":
-            return self._query_rag(query=kwargs.get("user_query"))
+            # Extraemos el filtro de los argumentos
+            user_query = kwargs.get("user_query")
+            where_filter = kwargs.get("where_filter")
+            return self._query_rag(query=user_query, where_filter=where_filter)
         else:
             return f"Modo '{mode}' no reconocido para RAGTool. Use 'index' o 'query'."
 
@@ -126,24 +127,39 @@ class RAGTool(BaseTool):
         except Exception as e:
             return f"Ocurrió un error inesperado durante la indexación: {e}"
 
-    def _query_rag(self, query: str) -> str:
-        # Este método no necesita cambios
+    def _query_rag(self, query: str, where_filter: Dict[str, Any] = None) -> str:
+        """
+        MODIFICADO: Realiza una consulta RAG, aceptando un filtro opcional.
+        """
         if not query:
             return "La consulta no puede estar vacía."
+            
         print(f"Realizando búsqueda RAG para la consulta: '{query}'")
+        
         query_embedding = self._api_client.generate_embeddings(query)
         if not query_embedding:
             return "No se pudo generar el embedding para la consulta."
-        search_results = self._db_manager.query(query_embedding, n_results=3)
+
+        # Pasamos el filtro al gestor de la base de datos
+        search_results = self._db_manager.query(query_embedding, n_results=5, where_filter=where_filter)
+        
         if not search_results:
-            return "No se encontró información relevante en la base de conocimiento para responder a tu pregunta."
+            return "No se encontró información relevante en la base de conocimiento para responder a tu pregunta (incluso con filtros)."
+
         context = "\n\n---\n\n".join([result['document'] for result in search_results])
+        
         rag_prompt = (
             f"Basándote únicamente en el siguiente CONTEXTO EXTRAÍDO de documentos, responde a la PREGUNTA del usuario. "
             f"Si el contexto no contiene la respuesta, di explícitamente que no tienes suficiente información.\n\n"
             f"CONTEXTO:\n{context}\n\n"
             f"PREGUNTA:\n{query}"
         )
+
         print("Generando respuesta final basada en el contexto recuperado...")
         final_answer = self._api_client.generate_content(prompt=rag_prompt)
+        
         return final_answer
+
+
+
+    

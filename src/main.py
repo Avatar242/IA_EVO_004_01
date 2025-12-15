@@ -77,21 +77,11 @@ def main():
                 query = user_input.split(" ", 1)[1]
                 response = rag_tool.execute(mode="query", user_query=query)
             else:
-                # --- Flujo normal con lógica de argumentos en Python ---
-                
-                # 1. El Dispatcher solo decide el NOMBRE de la herramienta
-                tool_name = dispatcher.dispatch(user_input, conversation_history, tool_registry)
-                
-                # 2. El código Python construye los argumentos
-                tool_args = {}
-                if tool_name == "rag_tool":
-                    # Si es la RAG tool, preparamos los argumentos para el modo 'query'
-                    tool_args = {"mode": "query", "user_query": user_input}
-                elif tool_name == "general_conversation":
-                    # Si es la de conversación, preparamos los suyos
-                    tool_args = {"user_prompt": user_input, "history": conversation_history}
+                # --- Flujo normal del despachador ---
+                # El dispatcher ahora es responsable de elegir la herramienta Y preparar los argumentos
+                tool_name, tool_args = dispatcher.dispatch(user_input, conversation_history, tool_registry)
 
-                # 3. Ejecutamos la herramienta con los argumentos correctos
+                # Ejecutamos la herramienta con los argumentos que el dispatcher preparó
                 tool = tool_registry.get_tool(tool_name)
                 response = tool.execute(**tool_args)
 

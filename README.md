@@ -50,3 +50,15 @@ Durante el desarrollo del Hito de RAG, se ha identificado una deuda técnica cla
 
 *   **Calidad de la Búsqueda (Retrieval Quality):** La combinación actual de la estrategia de chunking (`RecursiveCharacterTextSplitter`) y el modelo de embeddings no es suficientemente precisa para recuperar de forma fiable información específica (como listas o datos concretos) de documentos densos.
     *   **Solución Planificada:** Reemplazar el `RecursiveCharacterTextSplitter` con una implementación de **Chunking Semántico Puro (Nivel 3)**. Esto implicará el uso de modelos de NLP para dividir el texto basándose en cambios de tema, en lugar de separadores de caracteres. Esta tarea se abordará en un hito de optimización futuro.
+
+
+---
+
+## Deuda Técnica y Mejoras Futuras
+
+*   **Calidad de la Búsqueda (Retrieval Quality):**
+    *   **Problema:** La combinación actual de la estrategia de chunking y el modelo de embeddings local (`nomic-embed-text`) no es suficientemente precisa para recuperar de forma fiable información específica de documentos densos.
+    *   **Validación Bloqueada (NUEVO):** El intento de validar la arquitectura con un modelo de embeddings más potente (Google Gemini) falló debido a las limitaciones del tier gratuito de la API, que no permite peticiones al endpoint de `embed_content` sin facturación activada.
+    *   **Solución Planificada:**
+        1.  Reemplazar el `RecursiveCharacterTextSplitter` con una implementación de **Chunking Semántico Puro (Nivel 3)**.
+        2.  Investigar y probar modelos de embeddings de código abierto más avanzados que `nomic-embed-text` y que puedan ejecutarse localmente.
