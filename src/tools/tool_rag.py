@@ -38,20 +38,18 @@ class RAGTool(BaseTool):
         if mode == "index":
             return self.index_document(file_path=kwargs.get("file_path"))
         elif mode == "query":
-            # Extraemos el filtro de los argumentos
             user_query = kwargs.get("user_query")
             where_filter = kwargs.get("where_filter")
-            return self._query_rag(query=user_query, where_filter=where_filter)
+            return self._intelligent_query_rag(query=user_query, where_filter=where_filter)
         else:
             return f"Modo '{mode}' no reconocido para RAGTool. Use 'index' o 'query'."
 
+    # ... (los métodos _get_document_category e index_document no cambian) ...
     def _get_document_category(self, text_excerpt: str) -> Tuple[str, List[str]]:
         """
         Usa el LLM para determinar automáticamente la categoría y las etiquetas de un documento.
         """
         print("Determinando la categoría del documento usando el LLM...")
-        
-        # SOLUCIÓN 2: Prompt de categorización mejorado
         system_prompt = (
             "Tu rol es ser un experto bibliotecario. Analiza el siguiente extracto de texto. "
             "Tu única tarea es devolver un objeto JSON con dos claves: "
@@ -59,7 +57,6 @@ class RAGTool(BaseTool):
             "2. 'tags': una lista de hasta 5 términos técnicos o entidades clave, muy específicos del texto, en minúsculas. Evita palabras genéricas como 'información' o 'documento'. "
             "No añadas explicaciones. Tu respuesta debe ser solo el JSON."
         )
-        
         categorization_prompt = f"Extracto del documento:\n\n{text_excerpt}"
 
         try:
@@ -67,7 +64,6 @@ class RAGTool(BaseTool):
                 prompt=categorization_prompt,
                 history=[{'role': 'system', 'content': system_prompt}]
             )
-            
             json_match = re.search(r"\{.*\}", response_str, re.DOTALL)
             if not json_match:
                 raise json.JSONDecodeError("No JSON object found in LLM response", response_str, 0)
@@ -86,37 +82,31 @@ class RAGTool(BaseTool):
             return "general", []
 
     def index_document(self, file_path: str) -> str:
-        """
-        MODIFICADO: Procesa, categoriza, vectoriza e indexa un documento.
-        """
         try:
             chunks = self._doc_processor.process_pdf(file_path)
             if not chunks:
                 return "No se pudo extraer texto del documento."
 
-            # NUEVO: Usar los primeros 2000 caracteres para la categorización
             document_excerpt = " ".join(chunks)[:2000]
             category, tags = self._get_document_category(document_excerpt)
 
-            print(f"Generando embeddings para {len(chunks)} trozos...")
-            embeddings = [self._api_client.generate_embeddings(chunk) for chunk in chunks]
-            
-            ids, metadatas = [], []
-            timestamp = datetime.datetime.utcnow().isoformat()
-            
+            embeddings = []
+            print(f"Generando embeddings finales para {len(chunks)} chunks...")
             for i, chunk in enumerate(chunks):
-                chunk_hash = hashlib.sha256(chunk.encode()).hexdigest()
-                doc_id = f"{file_path}_{i}"
-                ids.append(doc_id)
-                metadatas.append({
-                    "source_id": file_path,
-                    "document_type": "pdf",
-                    "chunk_seq_id": i,
-                    "text_hash": chunk_hash,
-                    "category": category, # Usamos el valor autogenerado
-                    "tags": ",".join(tags), # Usamos los valores autogenerados
-                    "created_at": timestamp
-                })
+                embedding = self._api_client.generate_embeddings(chunk)
+                if not embedding:
+                    raise Exception(f"Fallo crítico al generar embedding para el chunk {i}.")
+                embeddings.append(embedding)
+                print(f"Generando embedding {i+1}/{len(chunks)}...", end="\r")
+            print("\nGeneración de embeddings finales completada.")
+
+            ids = [f"{file_path}_{i}" for i in range(len(chunks))]
+            metadatas = [{
+                "source_id": file_path, "document_type": "pdf", "chunk_seq_id": i,
+                "text_hash": hashlib.sha256(chunk.encode()).hexdigest(),
+                "category": category, "tags": ",".join(tags),
+                "created_at": datetime.datetime.utcnow().isoformat()
+            } for i, chunk in enumerate(chunks)]
 
             success = self._db_manager.add_documents(ids, chunks, embeddings, metadatas)
             if success:
@@ -127,39 +117,101 @@ class RAGTool(BaseTool):
         except Exception as e:
             return f"Ocurrió un error inesperado durante la indexación: {e}"
 
-    def _query_rag(self, query: str, where_filter: Dict[str, Any] = None) -> str:
-        """
-        MODIFICADO: Realiza una consulta RAG, aceptando un filtro opcional.
-        """
+
+    def _intelligent_query_rag(self, query: str, where_filter: Dict[str, Any] = None) -> str:
         if not query:
             return "La consulta no puede estar vacía."
-            
-        print(f"Realizando búsqueda RAG para la consulta: '{query}'")
         
+        print(f"--- Iniciando Búsqueda RAG Inteligente para: '{query}' ---")
+        
+        # 1. Búsqueda inicial
+        print("\n[Paso 1/3] Realizando búsqueda vectorial inicial...")
+        search_results = self._perform_search(query, where_filter)
+
+        # 2. Validación y posible reintento con COMBINACIÓN
+        if not search_results or not self._validate_context(query, search_results):
+            print("\n[Paso 2/3] Contexto inicial insuficiente. Intentando transformar y combinar...")
+            
+            enhanced_query = self._transform_query(query)
+            if enhanced_query.lower() != query.lower():
+                print(f"  -> Nueva consulta generada: '{enhanced_query}'")
+                # Realizamos la segunda búsqueda
+                second_results = self._perform_search(enhanced_query, where_filter)
+                
+                ### NUEVO: Lógica de combinación y de-duplicación
+                if second_results:
+                    print(f"  -> Combinando {len(search_results)} resultados iniciales con {len(second_results)} nuevos resultados.")
+                    combined_results = search_results + second_results
+                    
+                    # Usamos un diccionario para eliminar duplicados basados en el 'id' del chunk
+                    unique_results = {}
+                    for result in combined_results:
+                        unique_results[result['id']] = result
+                    
+                    search_results = list(unique_results.values())
+                    print(f"  -> Contexto final combinado con {len(search_results)} chunks únicos.")
+
+            else:
+                print("  -> El LLM no pudo generar una consulta alternativa. Usando resultados originales.")
+
+        # 3. Generación de respuesta final
+        print("\n[Paso 3/3] Generando respuesta final basada en el mejor contexto disponible...")
+        if not search_results:
+            return "No se encontró información relevante en la base de conocimiento."
+
+        return self._generate_final_answer(query, search_results)
+
+    def _perform_search(self, query: str, where_filter: Dict[str, Any]) -> List[Dict[str, Any]]:
         query_embedding = self._api_client.generate_embeddings(query)
         if not query_embedding:
-            return "No se pudo generar el embedding para la consulta."
-
-        # Pasamos el filtro al gestor de la base de datos
-        search_results = self._db_manager.query(query_embedding, n_results=5, where_filter=where_filter)
+            print("[ADVERTENCIA] No se pudo generar embedding para la consulta.")
+            return []
         
-        if not search_results:
-            return "No se encontró información relevante en la base de conocimiento para responder a tu pregunta (incluso con filtros)."
+        return self._db_manager.query(query_embedding, n_results=10, where_filter=where_filter)
 
+    def _validate_context(self, original_query: str, search_results: List[Dict[str, Any]]) -> bool:
+        print("  -> Validando la calidad del contexto recuperado con el LLM...")
+        if not search_results: # Si no hay resultados, la validación es False por definición
+            return False
+            
+        context = "\n\n---\n\n".join([result['document'] for result in search_results])
+        
+        validation_prompt = (
+            f"Pregunta del Usuario: '{original_query}'\n\n"
+            f"Contexto Recuperado:\n---\n{context}\n---\n\n"
+            "Analiza el contexto. ¿Contiene información que responda directa y completamente a la pregunta del usuario? "
+            "Responde únicamente con la palabra 'SI' o 'NO'."
+        )
+        
+        try:
+            response = self._api_client.generate_content(validation_prompt).strip().upper()
+            print(f"  -> Respuesta de validación del LLM: '{response}'")
+            return "SI" in response
+        except Exception as e:
+            print(f"[ADVERTENCIA] Falló la validación del LLM: {e}. Asumiendo que el contexto es válido.")
+            return True
+
+    def _transform_query(self, original_query: str) -> str:
+        transform_prompt = (
+            "Tu tarea es reformular la siguiente pregunta de un usuario para hacerla más efectiva en una búsqueda de base de datos semántica. "
+            "Enfócate en las palabras clave y la intención. No respondas a la pregunta, solo transfórmala.\n\n"
+            f"Pregunta Original: '{original_query}'\n\n"
+            "Pregunta Reformulada:"
+        )
+        try:
+            return self._api_client.generate_content(transform_prompt).strip()
+        except Exception as e:
+            print(f"[ADVERTENCIA] Falló la transformación de la consulta: {e}. Usando la consulta original.")
+            return original_query
+
+    def _generate_final_answer(self, original_query: str, search_results: List[Dict[str, Any]]) -> str:
         context = "\n\n---\n\n".join([result['document'] for result in search_results])
         
         rag_prompt = (
             f"Basándote únicamente en el siguiente CONTEXTO EXTRAÍDO de documentos, responde a la PREGUNTA del usuario. "
             f"Si el contexto no contiene la respuesta, di explícitamente que no tienes suficiente información.\n\n"
             f"CONTEXTO:\n{context}\n\n"
-            f"PREGUNTA:\n{query}"
+            f"PREGUNTA:\n{original_query}"
         )
 
-        print("Generando respuesta final basada en el contexto recuperado...")
-        final_answer = self._api_client.generate_content(prompt=rag_prompt)
-        
-        return final_answer
-
-
-
-    
+        return self._api_client.generate_content(prompt=rag_prompt)

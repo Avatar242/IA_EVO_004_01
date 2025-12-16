@@ -39,7 +39,7 @@ def main():
         sys.exit(1)
 
     db_manager = VectorDBManager(collection_name=f"{api_provider}_collection")
-    doc_processor = DocumentProcessor(chunk_size=512, chunk_overlap=100) # Usamos el chunking mejorado
+    doc_processor = DocumentProcessor(chunk_size=1024, chunk_overlap=200) # Usamos el chunking mejorado
     
     tool_registry = ToolRegistry()
 
