@@ -2,8 +2,6 @@
 
 from typing import List
 import pypdf
-
-# NUEVO: Importamos el divisor de texto de Langchain
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 class DocumentProcessor:
@@ -11,7 +9,7 @@ class DocumentProcessor:
     MODIFICADO: Procesa documentos usando estrategias avanzadas de división de texto (chunking).
     """
 
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+    def __init__(self, chunk_size: int = 1024, chunk_overlap: int = 200):
         """
         Inicializa el procesador de documentos.
 
@@ -19,8 +17,6 @@ class DocumentProcessor:
             chunk_size (int): El tamaño máximo de cada trozo (el splitter intentará respetarlo).
             chunk_overlap (int): El número de caracteres que se superpondrán entre trozos.
         """
-        # MODIFICADO: Creamos una instancia del splitter de Langchain.
-        # Intenta dividir primero por párrafos, luego por saltos de línea, etc.
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -31,24 +27,32 @@ class DocumentProcessor:
 
     def process_pdf(self, file_path: str) -> List[str]:
         """
-        Lee un archivo PDF, extrae el texto y lo divide usando el text splitter.
+        MODIFICADO: Lee un PDF página por página, dividiendo el texto de cada página
+        individualmente para respetar los límites estructurales del documento.
         """
         print(f"Procesando el archivo PDF: {file_path}")
         try:
             reader = pypdf.PdfReader(file_path)
-            full_text = ""
-            for page in reader.pages:
-                full_text += page.extract_text() or ""
-            
-            print(f"Texto extraído: {len(full_text)} caracteres.")
-            
-            if not full_text:
-                return []
+            all_chunks = []
+            total_chars = 0
 
-            # MODIFICADO: Usamos el splitter para dividir el texto
-            chunks = self.text_splitter.split_text(full_text)
-            print(f"Texto dividido en {len(chunks)} trozos (chunks).")
-            return chunks
+            for i, page in enumerate(reader.pages):
+                page_text = page.extract_text() or ""
+                if not page_text:
+                    continue
+                
+                total_chars += len(page_text)
+                
+                # Dividimos el texto de la página actual
+                page_chunks = self.text_splitter.split_text(page_text)
+                
+                # AÑADIDO: Podríamos enriquecer los chunks con metadata de la página si quisiéramos.
+                # Por ahora, simplemente los agregamos a la lista total.
+                all_chunks.extend(page_chunks)
+
+            print(f"Texto extraído: {total_chars} caracteres.")
+            print(f"Texto dividido en {len(all_chunks)} trozos (chunks) procesando página por página.")
+            return all_chunks
             
         except FileNotFoundError:
             print(f"[ERROR] Archivo no encontrado en: {file_path}")
@@ -56,5 +60,3 @@ class DocumentProcessor:
         except Exception as e:
             print(f"[ERROR] No se pudo leer el archivo PDF: {e}")
             raise
-
-    # El método _chunk_text manual ya no es necesario y ha sido eliminado.
