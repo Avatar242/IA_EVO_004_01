@@ -86,22 +86,30 @@ class RAGTool(BaseTool):
             return "general", []
 
     def index_document(self, file_path: str) -> str:
-        """
-        MODIFICADO: Procesa, categoriza, vectoriza e indexa un documento.
-        """
         try:
+            import time
+            
             chunks = self._doc_processor.process_pdf(file_path)
             if not chunks:
                 return "No se pudo extraer texto del documento."
 
-            # NUEVO: Usar los primeros 2000 caracteres para la categorización
             document_excerpt = " ".join(chunks)[:2000]
             category, tags = self._get_document_category(document_excerpt)
 
-            print(f"Generando embeddings para {len(chunks)} trozos...")
-            embeddings = [self._api_client.generate_embeddings(chunk) for chunk in chunks]
-            
-            ids, metadatas = [], []
+            embeddings = []
+            print(f"Generando embeddings finales para {len(chunks)} chunks...")
+            for i, chunk in enumerate(chunks):
+                embedding = self._api_client.generate_embeddings(chunk)
+                if not embedding:
+                    # Si después del retardo sigue fallando, es mejor detenerse.
+                    raise Exception(f"Fallo crítico al generar embedding para el chunk {i}. El servidor de Ollama puede estar inestable.")
+                embeddings.append(embedding)
+                print(f"Generando embedding {i+1}/{len(chunks)}...", end="\r")
+                time.sleep(0.1) # Retardo de 100ms
+            print("\nGeneración de embeddings finales completada.")
+
+            ids = []
+            metadatas = []
             timestamp = datetime.datetime.utcnow().isoformat()
             
             for i, chunk in enumerate(chunks):
@@ -109,12 +117,8 @@ class RAGTool(BaseTool):
                 doc_id = f"{file_path}_{i}"
                 ids.append(doc_id)
                 metadatas.append({
-                    "source_id": file_path,
-                    "document_type": "pdf",
-                    "chunk_seq_id": i,
-                    "text_hash": chunk_hash,
-                    "category": category, # Usamos el valor autogenerado
-                    "tags": ",".join(tags), # Usamos los valores autogenerados
+                    "source_id": file_path, "document_type": "pdf", "chunk_seq_id": i,
+                    "text_hash": chunk_hash, "category": category, "tags": ",".join(tags),
                     "created_at": timestamp
                 })
 
