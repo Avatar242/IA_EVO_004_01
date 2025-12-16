@@ -17,3 +17,8 @@ chromadb
 # Langchain para capacidades avanzadas de procesamiento de texto (Chunking)
 langchain-core
 langchain-text-splitters
+
+rank-bm25
+
+sentence-transformers
+torch
